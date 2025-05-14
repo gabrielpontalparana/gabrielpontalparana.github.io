@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Busca por Código - Danfo.js</title>
+  <script src="https://cdn.jsdelivr.net/npm/danfojs@1.1.2/lib/bundle.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+
+    #compositionMainInfo {
+      margin-bottom: 15px;
+      padding: 10px;
+      background-color: #f0f0f0;
+      border: 1px solid #ccc;
+      border-left: 5px solid #007bff;
+    }
+
+    #compositionMainInfo p {
+      margin: 5px 0;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    th,
+    td {
+      border: 1px solid #dddddd;
+      text-align: left;
+      padding: 8px;
+    }
+
+    th {
+      background-color: #f2f2f2;
+    }
+
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+
+    .numeric-cell {
+      text-align: right;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>Busca por Código - Composição SINAPI</h2>
+
+  <label for="data">Data:</label>
+  <select id="data" onchange="carregarCSV()"></select>
+
+  <br /><br />
+
+  <label for="codigo">Código:</label>
+  <input type="text" id="codigo" />
+  <button onclick="buscarComposicao()">Buscar</button>
+
+  <div id="resultado" style="margin-top: 20px;"></div>
+
+  <script>
+    let dfGlobal = null;
+
+    const COL_COD_COMP = "Codigo_Composicao";
+    const COL_DESC_COMP = "Descrição";
+    const COL_CUSTO_TOTAL_COMP = "Custo_Composição";
+
+    function popularDropdownDatas() {
+      const select = document.getElementById("data");
+      const start = new Date(2021, 4); // Maio 2021
+      const end = new Date(2025, 3); // Dezembro 2024
+
+      while (start <= end) {
+        const year = start.getFullYear();
+        const month = String(start.getMonth() + 1).padStart(2, '0');
+        const value = `${year}_${month}`;
+        const option = document.createElement("option");
+        option.value = value;
+        option.text = `${month}/${year}`;
+        select.appendChild(option);
+        start.setMonth(start.getMonth() + 1);
+      }
+
+      select.value = "2021_05";
+    }
+
+    async function carregarCSV() {
+      const dataSelecionada = document.getElementById("data").value;
+      const url = `https://raw.githubusercontent.com/gabrielpontalparana/gabrielpontalparana.github.io/refs/heads/main/ComposicaoSinapi/composicao_sinapi_${dataSelecionada}.csv`;
+      const divResultado = document.getElementById("resultado");
+
+      try {
+        dfGlobal = await dfd.readCSV(url, { delimiter: ";", encoding: "utf-8" });
+        if (dfGlobal && dfGlobal.columns) {
+          dfGlobal.columns = dfGlobal.columns.map(col => col.trim());
+        } else {
+          throw new Error("DataFrame não foi carregado corretamente.");
+        }
+        console.log("CSV carregado:", url);
+      } catch (err) {
+        console.error("Erro ao carregar CSV:", err);
+        divResultado.innerHTML = "<p>Erro ao carregar o arquivo CSV. Verifique o console para mais detalhes.</p>";
+      }
+    }
+
+    function formatAsBRL(value) {
+      if (value === null || typeof value === 'undefined' || String(value).trim() === "") return "";
+      let numStr = String(value).replace(/\./g, '').replace(',', '.');
+      const num = parseFloat(numStr);
+      if (isNaN(num)) return value;
+      return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function formatNumber(value, decimalPlaces = 8) {
+      if (value === null || typeof value === 'undefined' || String(value).trim() === "") return "";
+      let numStr = String(value).replace(/\./g, '').replace(',', '.');
+      const num = parseFloat(numStr);
+      if (isNaN(num)) return value;
+      return num.toFixed(decimalPlaces);
+    }
+
+    async function buscarComposicao() {
+      const codigoInput = document.getElementById("codigo").value.trim();
+      const divResultado = document.getElementById("resultado");
+      divResultado.innerHTML = "";
+
+      if (!dfGlobal) {
+        divResultado.innerHTML = "<p>O arquivo CSV ainda não foi carregado. Por favor, aguarde.</p>";
+        return;
+      }
+      if (!codigoInput) {
+        divResultado.innerHTML = "<p>Por favor, insira um código para buscar.</p>";
+        return;
+      }
+
+      const codigoLimpo = codigoInput.toString().trim();
+
+      try {
+        if (!dfGlobal.columns.includes(COL_COD_COMP)) {
+          divResultado.innerHTML = `<p>Erro: Coluna "${COL_COD_COMP}" não encontrada.</p>`;
+          return;
+        }
+
+        const colunaCodigoComposicao = dfGlobal[COL_COD_COMP].asType("string");
+        const mask = colunaCodigoComposicao.map(c => c && c.trim() === codigoLimpo);
+        const filtro = dfGlobal.loc({ rows: mask });
+
+        if (filtro.shape[0] > 0) {
+          const primeiraLinha = filtro.iloc({ rows: [0] });
+          const codigoCompVal = primeiraLinha[COL_COD_COMP].values[0];
+          const descricaoCompVal = primeiraLinha[COL_DESC_COMP].values[0];
+          const custoTotalCompVal = primeiraLinha[COL_CUSTO_TOTAL_COMP].values[0];
+
+          let headerDisplayHTML = `
+            <div id="compositionMainInfo">
+              <p><strong>${COL_COD_COMP}:</strong> ${codigoCompVal}</p>
+              <p><strong>${COL_DESC_COMP}:</strong> ${descricaoCompVal}</p>
+              <p><strong>${COL_CUSTO_TOTAL_COMP}:</strong> ${formatAsBRL(custoTotalCompVal)}</p>
+            </div>
+          `;
+
+          const colsToDrop = [COL_COD_COMP, COL_DESC_COMP, COL_CUSTO_TOTAL_COMP];
+          const dfParaTabela = filtro.drop({ columns: colsToDrop });
+
+          let tableHTML = "<table><thead><tr>";
+          dfParaTabela.columns.forEach(colName => {
+            tableHTML += `<th>${colName}</th>`;
+          });
+          tableHTML += "</tr></thead><tbody>";
+
+          const dataParaTabela = dfParaTabela.values.slice(1);
+          dataParaTabela.forEach(rowArray => {
+            tableHTML += "<tr>";
+            rowArray.forEach((cellValue, cellIndex) => {
+              let displayValue = (cellValue === null || typeof cellValue === 'undefined') ? "" : cellValue;
+              let cellClass = "";
+              const currentDetailColName = dfParaTabela.columns[cellIndex];
+
+              if (currentDetailColName === "COEFICIENTE") {
+                displayValue = formatNumber(displayValue, 8);
+                cellClass = "numeric-cell";
+              } else if (["PRECO_UNITARIO_MOEDA", "CUSTO_TOTAL_MOEDA"].includes(currentDetailColName)) {
+                displayValue = formatAsBRL(displayValue);
+                cellClass = "numeric-cell";
+              }
+
+              tableHTML += `<td class="${cellClass}">${displayValue}</td>`;
+            });
+            tableHTML += "</tr>";
+          });
+          tableHTML += "</tbody></table>";
+
+          divResultado.innerHTML = headerDisplayHTML + tableHTML;
+
+        } else {
+          divResultado.innerHTML = `<p>Nenhum resultado encontrado para o código informado: <strong>${codigoLimpo}</strong></p>`;
+        }
+      } catch (err) {
+        console.error("Erro ao buscar composição:", err);
+        divResultado.innerHTML = `<p>Ocorreu um erro ao buscar a composição: ${err.message}</p>`;
+      }
+    }
+
+    popularDropdownDatas();
+    carregarCSV();
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.jsdelivr.net/npm/danfojs@1.2.0/lib/bundle.js"></script>
+  <title>Exibir CSV com Filtro e Seleção de Mês/Ano</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    .controls {
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px; /* Espaçamento entre os controles */
+    }
+    #monthYearSelect,
+    #filterBox {
+      padding: 8px;
+      /* width: 100%; */ /* Removido para melhor ajuste com flex */
+      /* max-width: 300px; */ /* Removido ou ajustado se necessário */
+      /* margin-right: 10px; */ /* Removido, usando gap */
+    }
+    #monthYearSelect {
+        min-width: 150px; /* Largura mínima para o select */
+    }
+    #filterBox {
+        flex-grow: 1; /* Faz o input de filtro ocupar o espaço restante */
+        max-width: 400px;
+    }
+    #searchBtn {
+      padding: 8px 16px;
+    }
+    #div1 {
+      margin-top: 15px;
+      max-height: 800px;
+      overflow-y: auto;
+    }
+    #div1 table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    #div1 th, #div1 td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    #div1 th {
+      background-color: #f2f2f2;
+    }
+    .loading-message {
+        font-style: italic;
+        color: #555;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="controls">
+    <div>
+        <label for="monthYearSelect">Selecione o Mês/Ano:</label>
+        <select id="monthYearSelect"></select>
+    </div>
+    <input type="text" id="filterBox" placeholder="Digite palavras para filtrar (ex: parede 30)" />
+    <button id="searchBtn">Procurar</button>
+  </div>
+
+  <div id="div1"></div>
+
+  <script>
+    let originalDf;
+    const csvBaseUrl = "https://raw.githubusercontent.com/gabrielpontalparana/gabrielpontalparana.github.io/main/Sinapi/dados_sinapi_";
+    const monthYearSelect = document.getElementById("monthYearSelect");
+    const filterBox = document.getElementById("filterBox");
+    const searchBtn = document.getElementById("searchBtn");
+    const div1 = document.getElementById("div1");
+
+    function removeAcentos(texto) {
+      return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    }
+
+    function populateMonthYearDropdown() {
+      const startYear = 2021;
+      const startMonth = 5; // maio
+      const endYear = 2025;
+      const endMonth = 4;   // abril
+
+      for (let year = startYear; year <= endYear; year++) {
+        const monthStart = (year === startYear) ? startMonth : 1;
+        const monthEnd = (year === endYear) ? endMonth : 12;
+
+        for (let month = monthStart; month <= monthEnd; month++) {
+          const monthPadded = String(month).padStart(2, '0');
+          const optionValue = `${year}_${monthPadded}`;
+          const optionText = `${year}/${monthPadded}`;
+
+          const option = document.createElement("option");
+          option.value = optionValue;
+          option.textContent = optionText;
+          monthYearSelect.appendChild(option);
+        }
+      }
+      // Opcional: definir um valor padrão (ex: o primeiro da lista ou o mais recente)
+      // Aqui, vamos pegar o primeiro como padrão, que será 2024_01
+      if (monthYearSelect.options.length > 0) {
+        // Se quiser o mais recente como padrão (o último da lista):
+        // monthYearSelect.selectedIndex = monthYearSelect.options.length - 1;
+      }
+    }
+
+function loadAndProcessCsv(yearMonth) {
+      const csvUrl = `${csvBaseUrl}${yearMonth}.csv`;
+
+      // --- ALERTA TEMPORÁRIO ---
+      //alert("Procurando CSV em: " + csvUrl);
+      // --- FIM DO ALERTA TEMPORÁRIO ---
+
+      div1.innerHTML = `<p class="loading-message">Carregando dados para ${yearMonth.replace("_", "/")}...</p>`;
+      filterBox.value = ""; // Limpa o filtro ao carregar novos dados
+
+      dfd.readCSV(csvUrl, {
+        delimiter: ';',
+        encoding: 'utf-8'
+      })
+      .then(df => {
+        originalDf = df;
+        console.log(`Dados carregados para ${yearMonth}. Nomes das colunas:`, df.columns);
+        renderTable(df);
+      })
+      .catch(err => {
+        console.error(`Erro ao carregar o CSV para ${yearMonth}:`, err);
+        div1.innerHTML = `<p>Erro ao carregar ou processar o CSV para ${yearMonth.replace("_", "/")}. Verifique se o arquivo existe e o console para mais detalhes.</p>`;
+        originalDf = null; // Garante que não tentaremos filtrar dados inexistentes
+      });
+    }
+
+    function renderTable(df) {
+      div1.innerHTML = ""; // Limpa a mensagem de "carregando" ou tabela anterior
+
+      if (!df || df.isEmpty) {
+        div1.innerHTML = "<p>Nenhum dado para exibir.</p>";
+        return;
+      }
+
+      const table = document.createElement("table");
+
+      // Cabeçalho
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      df.columns.forEach(col => {
+        const th = document.createElement("th");
+        th.textContent = col;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      // Corpo da tabela
+      const tbody = document.createElement("tbody");
+      df.values.forEach(row => {
+        const tr = document.createElement("tr");
+        row.forEach(cell => {
+          const td = document.createElement("td");
+          td.textContent = cell;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+
+      div1.appendChild(table);
+    }
+
+    function applyFilter() {
+      if (!originalDf) {
+        // alert("Por favor, selecione um Mês/Ano para carregar os dados primeiro.");
+        // Ou apenas renderiza uma tabela vazia/mensagem
+        renderTable(new dfd.DataFrame()); // Renderiza tabela vazia
+        return;
+      }
+
+      const input = removeAcentos(filterBox.value.trim().toLowerCase());
+
+      if (input === "") {
+        renderTable(originalDf);
+        return;
+      }
+
+      const keywords = input.split(/\s+/).filter(k => k.length > 0); // Filtra strings vazias
+      if (keywords.length === 0) {
+        renderTable(originalDf);
+        return;
+      }
+
+      const matchingRows = [];
+
+      // Tentar encontrar a coluna de descrição dinamicamente, priorizando "Descrição"
+      let descColumnName = "Descrição"; // Nome esperado
+      if (!originalDf.columns.includes(descColumnName)) {
+          // Tenta encontrar uma coluna que comece com "Descri" ignorando case e acentos
+          const possibleDescCols = originalDf.columns.filter(col =>
+              removeAcentos(col.toLowerCase()).startsWith("descri")
+          );
+          if (possibleDescCols.length > 0) {
+              descColumnName = possibleDescCols[0];
+              console.warn(`Coluna "Descrição" não encontrada. Usando "${descColumnName}" para filtro.`);
+          } else {
+              console.error("Coluna de descrição não encontrada para filtro. Nomes das colunas:", originalDf.columns);
+              div1.innerHTML += "<p style='color:red;'>Erro: Coluna de descrição não encontrada para realizar o filtro.</p>";
+              return; // Não pode filtrar sem a coluna
+          }
+      }
+
+
+      for (let i = 0; i < originalDf.shape[0]; i++) {
+        const rowDf = originalDf.loc({ rows: [i] });
+        const cellValue = rowDf.column(descColumnName).values[0];
+        const cellRaw = String(cellValue === null || cellValue === undefined ? "" : cellValue);
+        const cell = removeAcentos(cellRaw.toLowerCase());
+
+        const matches = keywords.every(word => cell.includes(word));
+        if (matches) matchingRows.push(i);
+      }
+
+      if (matchingRows.length > 0) {
+        const filteredDf = originalDf.loc({ rows: matchingRows });
+        renderTable(filteredDf);
+      } else {
+        div1.innerHTML = "<p>Nenhum resultado encontrado para o filtro aplicado.</p>";
+        // Opcional: exibir a tabela vazia com cabeçalhos
+        // const emptyDfWithCols = new dfd.DataFrame([], { columns: originalDf.columns });
+        // renderTable(emptyDfWithCols);
+      }
+    }
+
+    // --- Inicialização ---
+    document.addEventListener('DOMContentLoaded', () => {
+      populateMonthYearDropdown();
+
+      // Carrega o CSV para o mês/ano selecionado inicialmente
+      if (monthYearSelect.value) {
+        loadAndProcessCsv(monthYearSelect.value);
+      }
+
+      // Adiciona listener para o dropdown
+      monthYearSelect.addEventListener("change", (event) => {
+        loadAndProcessCsv(event.target.value);
+      });
+
+      // Adiciona listener para o botão de procurar
+      searchBtn.addEventListener("click", applyFilter);
+
+      // Opcional: aplicar filtro ao pressionar Enter no input
+      filterBox.addEventListener("keypress", (event) => {
+        if (event.key === "Enter") {
+          applyFilter();
+        }
+      });
+    });
+
+  </script>
+
+</body>
+</html>
