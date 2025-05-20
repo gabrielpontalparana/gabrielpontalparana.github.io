@@ -110,13 +110,20 @@
       }
     }
 
-    function formatAsBRL(value) {
-      if (value === null || typeof value === 'undefined' || String(value).trim() === "") return "";
-      let numStr = String(value).replace(/\./g, '').replace(',', '.');
-      const num = parseFloat(numStr);
-      if (isNaN(num)) return value;
-      return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    }
+function formatAsBRL(value) {
+  if (value === null || typeof value === 'undefined' || String(value).trim() === "") return "";
+
+  // Se for tipo número, usa direto
+  if (typeof value === 'number') {
+    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+
+  // Se for string, tenta converter para número
+  let parsedValue = parseFloat(value.replace(',', '.'));
+  if (isNaN(parsedValue)) return value;
+
+  return parsedValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
 
     function formatNumber(value, decimalPlaces = 8) {
       if (value === null || typeof value === 'undefined' || String(value).trim() === "") return "";
