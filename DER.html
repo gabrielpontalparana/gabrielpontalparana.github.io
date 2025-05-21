@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.jsdelivr.net/npm/danfojs@1.2.0/lib/bundle.js"></script>
+  <title>Exibir Planilha DER</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    .controls {
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #monthYearSelect,
+    #filterBox {
+      padding: 8px;
+    }
+    #monthYearSelect {
+      min-width: 150px;
+    }
+    #filterBox {
+      flex-grow: 1;
+      max-width: 400px;
+    }
+    #searchBtn {
+      padding: 8px 16px;
+    }
+    #div1 {
+      margin-top: 15px;
+      max-height: 800px;
+      overflow-y: auto;
+    }
+    #div1 table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    #div1 th, #div1 td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    #div1 th {
+      background-color: #f2f2f2;
+    }
+    .loading-message {
+      font-style: italic;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="controls">
+    <div>
+      <label for="monthYearSelect">Selecione a Planilha DER:</label>
+      <select id="monthYearSelect"></select>
+    </div>
+    <input type="text" id="filterBox" placeholder="Digite palavras para filtrar" />
+    <button id="searchBtn">Procurar</button>
+  </div>
+
+  <div id="div1"></div>
+
+  <script>
+    let originalDf;
+    const fileBaseUrl = "https://raw.githubusercontent.com/gabrielpontalparana/gabrielpontalparana.github.io/main/DER/";
+
+    const availableFiles = [
+      { file: "dados_der_2021_01.xlsx", label: "2021/01" },
+      { file: "dados_der_2022_02.xlsx", label: "2022/02" },
+      { file: "dados_der_2022_08.xlsx", label: "2022/08" },
+      { file: "dados_der_2023_02.xlsx", label: "2023/02" },
+      { file: "dados_der_2023_09.xlsx", label: "2023/09" },
+      { file: "dados_der_2023_09_Vigencia2911.xlsx", label: "2023/09 - Vigência 29/11" },
+      { file: "dados_der_2024_10.xlsx", label: "2024/10" },
+      { file: "dados_der_2025_03.xlsx", label: "2025/03" }
+    ];
+
+    const monthYearSelect = document.getElementById("monthYearSelect");
+    const filterBox = document.getElementById("filterBox");
+    const searchBtn = document.getElementById("searchBtn");
+    const div1 = document.getElementById("div1");
+
+    function removeAcentos(texto) {
+      return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    }
+
+    function populateDropdown() {
+      availableFiles.forEach(item => {
+        const option = document.createElement("option");
+        option.value = item.file;
+        option.textContent = item.label;
+        monthYearSelect.appendChild(option);
+      });
+    }
+
+    function loadAndProcessFile(fileName) {
+      const fileUrl = `${fileBaseUrl}${fileName}`;
+
+      div1.innerHTML = `<p class="loading-message">Carregando ${fileName}...</p>`;
+      filterBox.value = "";
+
+      dfd.readExcel(fileUrl)
+        .then(df => {
+          originalDf = df;
+          console.log("Colunas carregadas:", df.columns);
+          renderTable(df);
+        })
+        .catch(err => {
+          console.error("Erro ao carregar:", err);
+          div1.innerHTML = `<p style="color:red;">Erro ao carregar o arquivo: ${fileName}</p>`;
+          originalDf = null;
+        });
+    }
+
+    function renderTable(df) {
+      div1.innerHTML = "";
+
+      if (!df || df.isEmpty) {
+        div1.innerHTML = "<p>Nenhum dado para exibir.</p>";
+        return;
+      }
+
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+
+      df.columns.forEach(col => {
+        const th = document.createElement("th");
+        th.textContent = col;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+      df.values.forEach(row => {
+        const tr = document.createElement("tr");
+        row.forEach(cell => {
+          const td = document.createElement("td");
+          let cellContent = "";
+
+          if (typeof cell === 'number' && !isNaN(cell)) {
+            cellContent = String(cell).replace('.', ',');
+          } else if (cell !== null && cell !== undefined) {
+            cellContent = String(cell);
+          }
+
+          td.textContent = cellContent;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(tbody);
+      div1.appendChild(table);
+    }
+
+    function applyFilter() {
+      if (!originalDf) {
+        renderTable(new dfd.DataFrame());
+        return;
+      }
+
+      const input = removeAcentos(filterBox.value.trim().toLowerCase());
+
+      if (input === "") {
+        renderTable(originalDf);
+        return;
+      }
+
+      const keywords = input.split(/\s+/).filter(k => k.length > 0);
+      if (keywords.length === 0) {
+        renderTable(originalDf);
+        return;
+      }
+
+      const matchingRows = [];
+      let descColumnName = "Descrição";
+
+      if (!originalDf.columns.includes(descColumnName)) {
+        const possibleDescCols = originalDf.columns.filter(col =>
+          removeAcentos(col.toLowerCase()).startsWith("descri")
+        );
+        if (possibleDescCols.length > 0) {
+          descColumnName = possibleDescCols[0];
+        } else {
+          div1.innerHTML += "<p style='color:red;'>Erro: Coluna de descrição não encontrada para filtro.</p>";
+          return;
+        }
+      }
+
+      for (let i = 0; i < originalDf.shape[0]; i++) {
+        const rowDf = originalDf.loc({ rows: [i] });
+        const cellValue = rowDf.column(descColumnName).values[0];
+        const cellRaw = String(cellValue === null || cellValue === undefined ? "" : cellValue);
+        const cell = removeAcentos(cellRaw.toLowerCase());
+
+        const matches = keywords.every(word => cell.includes(word));
+        if (matches) matchingRows.push(i);
+      }
+
+      if (matchingRows.length > 0) {
+        const filteredDf = originalDf.loc({ rows: matchingRows });
+        renderTable(filteredDf);
+      } else {
+        div1.innerHTML = "<p>Nenhum resultado encontrado para o filtro aplicado.</p>";
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      populateDropdown();
+
+      if (monthYearSelect.value) {
+        loadAndProcessFile(monthYearSelect.value);
+      }
+
+      monthYearSelect.addEventListener("change", (event) => {
+        loadAndProcessFile(event.target.value);
+      });
+
+      searchBtn.addEventListener("click", applyFilter);
+
+      filterBox.addEventListener("keypress", (event) => {
+        if (event.key === "Enter") {
+          applyFilter();
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>
